@@ -33,7 +33,7 @@ Status: 🚧 Under active development (built incrementally as a guided DevSecOps
   - [x] Controllers: Auth, Wallet, Transaction
   - [x] application.yml (env-var driven config, actuator/prometheus exposed)
   - [x] Unit tests (FraudService, UserService) + integration smoke test
-- [ ] Dockerfile (multi-stage build)
+- [x] Step 4: Dockerfile (multi-stage build, non-root user, healthcheck)
 - [ ] Terraform infra
 - [ ] Jenkins pipeline
 - [ ] Kubernetes manifests
