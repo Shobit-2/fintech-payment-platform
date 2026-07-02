@@ -1,0 +1,58 @@
+spring:
+  application:
+    name: payment-platform
+
+  datasource:
+    # All values come from environment variables so the same JAR/image runs
+    # unchanged across local, Docker, and Kubernetes - only the env vars differ.
+    # In Kubernetes these are injected from a ConfigMap (non-secret) and a
+    # Secret (DB_PASSWORD, JWT_SECRET) - see kubernetes/ folder later.
+    url: jdbc:postgresql://${DB_HOST:localhost}:${DB_PORT:5432}/${DB_NAME:paymentplatform}
+    username: ${DB_USERNAME:postgres}
+    password: ${DB_PASSWORD:postgres}
+    hikari:
+      maximum-pool-size: 10
+      minimum-idle: 2
+
+  jpa:
+    hibernate:
+      # 'validate', never 'update' or 'create' - schema changes only happen
+      # via Flyway migrations, never via Hibernate auto-DDL. This is a
+      # deliberate production safety choice.
+      ddl-auto: validate
+    open-in-view: false
+    properties:
+      hibernate:
+        format_sql: false
+
+  flyway:
+    enabled: true
+    locations: classpath:db/migration
+    baseline-on-migrate: true
+
+server:
+  port: ${SERVER_PORT:8080}
+
+management:
+  endpoints:
+    web:
+      exposure:
+        include: health,prometheus,info
+  endpoint:
+    health:
+      show-details: when-authorized
+      probes:
+        enabled: true
+  metrics:
+    tags:
+      application: ${spring.application.name}
+
+app:
+  jwt:
+    secret: ${JWT_SECRET:change-this-in-production-via-env-var-minimum-32-chars}
+    expiration-ms: ${JWT_EXPIRATION_MS:3600000}
+
+logging:
+  level:
+    com.fintech.paymentplatform: INFO
+    org.springframework.security: WARN
