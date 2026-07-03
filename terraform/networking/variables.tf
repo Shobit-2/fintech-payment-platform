@@ -55,7 +55,8 @@ variable "single_nat_gateway" {
   default     = true
 }
 
-variable "admin_ip_cidr" {
-  description = "Your IP address in CIDR notation (e.g. '203.0.113.5/32'), used to restrict SSH/Jenkins UI access. Find yours at https://whatismyip.com and append /32. NEVER leave this as 0.0.0.0/0 beyond initial testing."
-  type        = string
-}
+# NOTE: an admin_ip_cidr variable previously restricted Jenkins UI/SSH to a
+# single IP. Per project decision, Jenkins UI and SSH are instead open to
+# 0.0.0.0/0 for convenience (see security-groups.tf comments for the
+# tradeoff and mitigations). Removed here to avoid a declared-but-unused
+# variable; reintroduce it if you tighten access later.

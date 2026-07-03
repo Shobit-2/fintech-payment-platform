@@ -12,22 +12,28 @@ resource "aws_security_group" "jenkins" {
   description = "Security group for the Jenkins EC2 instance"
   vpc_id      = aws_vpc.main.id
 
-  # Jenkins web UI. Restrict to your IP in production - 0.0.0.0/0 is used
-  # here only because this is a learning project; see variable below.
+  # OPEN TO THE INTERNET (0.0.0.0/0) - a deliberate choice for this learning
+  # project, made after discussing the tradeoff. In a real production
+  # environment this would instead be restricted to a VPN CIDR, a bastion
+  # host, or specific known IPs. Mitigations applied elsewhere to offset
+  # this: SSH will be key-only (no password auth), and Jenkins itself will
+  # be configured with a strong admin password + matrix-based authorization
+  # in Step 6 (Jenkins setup) - never leave Jenkins on its default
+  # "no login required" initial state when internet-exposed.
   ingress {
-    description = "Jenkins web UI"
+    description = "Jenkins web UI - open to internet (see comment above)"
     from_port   = 8080
     to_port     = 8080
     protocol    = "tcp"
-    cidr_blocks = [var.admin_ip_cidr]
+    cidr_blocks = ["0.0.0.0/0"]
   }
 
   ingress {
-    description = "SSH"
+    description = "SSH - open to internet (see comment above); key-only auth enforced at OS level"
     from_port   = 22
     to_port     = 22
     protocol    = "tcp"
-    cidr_blocks = [var.admin_ip_cidr]
+    cidr_blocks = ["0.0.0.0/0"]
   }
 
   egress {
