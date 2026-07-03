@@ -1,0 +1,15 @@
+# Copy to terraform.tfvars and fill in your real path.
+# terraform.tfvars is gitignored - never commit it.
+
+aws_region   = "us-east-1"
+environment  = "dev"
+project_name = "fintech"
+
+instance_type        = "t3.small"
+root_volume_size_gb  = 30
+
+# Path to YOUR public key. If you don't have an SSH key pair yet, generate
+# one first:
+#   ssh-keygen -t ed25519 -f ~/.ssh/fintech-jenkins -C "fintech-jenkins"
+# Then point this at the .pub file it creates:
+public_key_path = "~/.ssh/fintech-jenkins.pub"
