@@ -6,8 +6,8 @@
 // visualization in the Jenkins UI (Blue Ocean / stage view). We use it
 // throughout this project.
 //
-// STAGES IMPLEMENTED SO FAR: Checkout, Build & Test
-// Later steps will add: SCA/SBOM, SonarQube, Docker build, Trivy scan,
+// STAGES IMPLEMENTED SO FAR: Checkout, Build & Test, SCA + SBOM
+// Later steps will add: SonarQube, Docker build, Trivy scan,
 // ECR push, EKS deploy, ArgoCD sync, DAST, smoke test, canary/blue-green.
 // ============================================================================
 
@@ -87,6 +87,41 @@ pipeline {
                     // downloadable from the Jenkins UI, and this is also
                     // what Stage 5 (Docker build) will pick up next.
                     archiveArtifacts artifacts: 'application/target/*.jar',
+                                      allowEmptyArchive: true,
+                                      fingerprint: true
+                }
+            }
+        }
+
+        // ====================================================================
+        // STAGE 3: SOFTWARE COMPOSITION ANALYSIS + SBOM
+        // Two separate Maven goals, both already configured as plugins in
+        // pom.xml (see Step 3): OWASP Dependency-Check scans every
+        // dependency against the NVD (National Vulnerability Database) for
+        // known CVEs; CycloneDX generates bom.xml, a machine-readable
+        // inventory of every dependency + version + license.
+        //
+        // These run as a SEPARATE stage from Build & Test deliberately - if
+        // dependency scanning becomes slow (NVD database sync can take a
+        // while on a cold cache) or needs its own failure handling, it's
+        // isolated and easy to reason about independently in the stage view.
+        // ====================================================================
+        stage('SCA + SBOM') {
+            steps {
+                dir('application') {
+                    sh '''
+                        mvn org.owasp:dependency-check-maven:check
+                        mvn org.cyclonedx:cyclonedx-maven-plugin:makeAggregateBom
+                    '''
+                }
+            }
+            post {
+                always {
+                    // Archives the human-readable HTML report + the raw
+                    // SBOM so both are downloadable from this build in the
+                    // Jenkins UI, and available for Stage 7 (push SBOM to
+                    // ECR alongside the image) later.
+                    archiveArtifacts artifacts: 'application/target/dependency-check-report.html,application/target/bom.xml',
                                       allowEmptyArchive: true,
                                       fingerprint: true
                 }
