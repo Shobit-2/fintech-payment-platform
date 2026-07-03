@@ -33,12 +33,26 @@ Status: 🚧 Under active development (built incrementally as a guided DevSecOps
   - [x] Controllers: Auth, Wallet, Transaction
   - [x] application.yml (env-var driven config, actuator/prometheus exposed)
   - [x] Unit tests (FraudService, UserService) + integration smoke test
-- [x] Step 4: Dockerfile (multi-stage build, non-root user, healthcheck)
-- [ ] Terraform infra
+- [x] Step 6: Jenkins installed on EC2 (Java 21, Docker, kubectl, AWS CLI, Maven), connected to GitHub
+- [x] Step 7: Jenkinsfile - Stage 1 (Checkout) + Stage 2 (Build & Test + JaCoCo)
+- [ ] Stage 3: SCA + SBOM
+- [ ] Stage 4: SonarQube
+- [ ] Stage 5: Docker build in pipeline
+- [ ] Stage 6: Trivy scan
+- [ ] Stage 7: Push to ECR
+- [ ] Stage 8: EKS deployment
+- [ ] Stage 9: ArgoCD GitOps
+- [ ] Stage 10: DAST (OWASP ZAP)
+- [ ] Stage 11: Smoke testing
+- [ ] Stage 12: Canary/Blue-Green
+- [ ] Stage 13: Monitoring (Prometheus/Grafana)
 - [ ] Jenkins pipeline
+- [x] Terraform: networking layer (VPC, subnets, NAT, security groups)
+- [x] Terraform: Jenkins EC2 layer (IAM role, key pair, instance)
+- [ ] Terraform: EKS cluster
+- [ ] Terraform: ECR repository
+- [ ] Terraform: RDS PostgreSQL
 - [ ] Kubernetes manifests
-- [ ] ArgoCD GitOps
-- [ ] Monitoring stack
 
 ## API Endpoints
 | Method | Endpoint | Auth required |

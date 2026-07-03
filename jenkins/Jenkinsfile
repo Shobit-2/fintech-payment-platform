@@ -1,0 +1,105 @@
+// ============================================================================
+// Jenkinsfile - Digital Payment Processing Platform CI/CD Pipeline
+//
+// Declarative Pipeline syntax (vs. Scripted Pipeline): declarative is
+// structured, easier to read, and has built-in support for stage
+// visualization in the Jenkins UI (Blue Ocean / stage view). We use it
+// throughout this project.
+//
+// STAGES IMPLEMENTED SO FAR: Checkout, Build & Test
+// Later steps will add: SCA/SBOM, SonarQube, Docker build, Trivy scan,
+// ECR push, EKS deploy, ArgoCD sync, DAST, smoke test, canary/blue-green.
+// ============================================================================
+
+pipeline {
+    agent any
+
+    // Runs on every agent shell step in this pipeline. Explicit here so
+    // Maven definitely uses the intended JDK, rather than silently
+    // inheriting whatever Jenkins's own systemd override happens to set -
+    // being explicit in the Jenkinsfile is more maintainable than relying
+    // on host-level configuration nobody reading this file can see.
+    environment {
+        JAVA_HOME = '/usr/lib/jvm/java-21-openjdk-amd64'
+        PATH      = "${JAVA_HOME}/bin:${env.PATH}"
+    }
+
+    options {
+        // Keeps only the last 10 build records/artifacts - prevents the
+        // Jenkins server's disk from slowly filling up over weeks of runs.
+        buildDiscarder(logRotator(numToKeepStr: '10'))
+        // Fails fast if a stage hangs (e.g. a stuck test) instead of a
+        // zombie build occupying the executor forever.
+        timeout(time: 30, unit: 'MINUTES')
+    }
+
+    stages {
+
+        // ====================================================================
+        // STAGE 1: SOURCE CODE CHECKOUT
+        // In practice this stage is implicit - Jenkins already cloned the
+        // repo (per the Pipeline job's SCM configuration) before this
+        // Jenkinsfile even started executing. We keep an explicit stage
+        // anyway purely for VISIBILITY: the pipeline stage view should show
+        // every real phase of work, checkout included, not hide it.
+        // ====================================================================
+        stage('Checkout') {
+            steps {
+                echo "Checked out branch: ${env.GIT_BRANCH}"
+                echo "Commit: ${env.GIT_COMMIT}"
+                sh 'ls -la application/'
+            }
+        }
+
+        // ====================================================================
+        // STAGE 2: BUILD + TEST (CI)
+        // mvn clean verify runs the FULL lifecycle up through 'verify':
+        //   validate -> compile -> test (Surefire, *Test.java)
+        //            -> package -> integration-test (Failsafe, *IT.java)
+        //            -> verify
+        // JaCoCo is bound to the 'test' phase in pom.xml, so coverage data
+        // is collected automatically as part of this one command - no
+        // separate coverage step needed.
+        // ====================================================================
+        stage('Build & Test') {
+            steps {
+                dir('application') {
+                    sh '''
+                        echo "Using JDK:"
+                        java -version
+                        echo "Using Maven:"
+                        mvn -version
+
+                        mvn clean verify
+                    '''
+                }
+            }
+            post {
+                always {
+                    // Publishes JUnit/TestNG results (from Surefire AND
+                    // Failsafe) so Jenkins shows pass/fail trends and lets
+                    // you click into individual test failures in the UI,
+                    // rather than having to grep console output.
+                    junit testResults: 'application/target/surefire-reports/*.xml,application/target/failsafe-reports/*.xml',
+                          allowEmptyResults: true
+
+                    // Archives the compiled JAR as a build artifact -
+                    // downloadable from the Jenkins UI, and this is also
+                    // what Stage 5 (Docker build) will pick up next.
+                    archiveArtifacts artifacts: 'application/target/*.jar',
+                                      allowEmptyArchive: true,
+                                      fingerprint: true
+                }
+            }
+        }
+    }
+
+    post {
+        success {
+            echo "✅ Build & Test stage passed."
+        }
+        failure {
+            echo "❌ Pipeline failed - check the stage logs above for details."
+        }
+    }
+}
