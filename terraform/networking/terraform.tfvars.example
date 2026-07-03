@@ -1,0 +1,12 @@
+# Copy this file to terraform.tfvars and fill in your real values.
+# terraform.tfvars is gitignored - never commit it, since it may contain
+# values specific to your machine/IP.
+
+aws_region   = "us-east-1"
+environment  = "dev"
+project_name = "fintech"
+
+# Find your IP at https://whatismyip.com and add /32
+admin_ip_cidr = "REPLACE_WITH_YOUR_IP/32"
+
+single_nat_gateway = true
