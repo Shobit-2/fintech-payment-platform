@@ -109,10 +109,18 @@ pipeline {
         stage('SCA + SBOM') {
             steps {
                 dir('application') {
-                    sh '''
-                        mvn org.owasp:dependency-check-maven:check
-                        mvn org.cyclonedx:cyclonedx-maven-plugin:makeAggregateBom
-                    '''
+                    // NVD API key dramatically speeds up OWASP Dependency-
+                    // Check's vulnerability database sync (keyless requests
+                    // are heavily rate-limited by NIST and can take 20-30+
+                    // minutes on a cold cache). Injected as an environment
+                    // variable only for this step's duration - never
+                    // printed to console, never stored in the repo.
+                    withCredentials([string(credentialsId: 'nvd-api-key', variable: 'NVD_API_KEY')]) {
+                        sh '''
+                            mvn org.owasp:dependency-check-maven:check -DnvdApiKey=$NVD_API_KEY
+                            mvn org.cyclonedx:cyclonedx-maven-plugin:makeAggregateBom
+                        '''
+                    }
                 }
             }
             post {
