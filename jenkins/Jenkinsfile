@@ -6,9 +6,9 @@
 // visualization in the Jenkins UI (Blue Ocean / stage view). We use it
 // throughout this project.
 //
-// STAGES IMPLEMENTED SO FAR: Checkout, Build & Test, SCA + SBOM
-// Later steps will add: SonarQube, Docker build, Trivy scan,
-// ECR push, EKS deploy, ArgoCD sync, DAST, smoke test, canary/blue-green.
+// STAGES IMPLEMENTED SO FAR: Checkout, Build & Test, SCA + SBOM, SonarQube
+// Later steps will add: Docker build, Trivy scan, ECR push, EKS deploy,
+// ArgoCD sync, DAST, smoke test, canary/blue-green.
 // ============================================================================
 
 pipeline {
@@ -30,7 +30,12 @@ pipeline {
         buildDiscarder(logRotator(numToKeepStr: '10'))
         // Fails fast if a stage hangs (e.g. a stuck test) instead of a
         // zombie build occupying the executor forever.
-        timeout(time: 30, unit: 'MINUTES')
+        // TEMPORARILY raised from 30 to 60 minutes to allow the ONE-TIME
+        // full NVD database sync (Stage 3) to complete on first run. Once
+        // that completes, the local cache persists on this EC2 instance
+        // and future runs only fetch incremental deltas (seconds, not
+        // minutes) - we'll lower this back down afterward.
+        timeout(time: 60, unit: 'MINUTES')
     }
 
     stages {
@@ -132,6 +137,35 @@ pipeline {
                     archiveArtifacts artifacts: 'application/target/dependency-check-report.html,application/target/bom.xml',
                                       allowEmptyArchive: true,
                                       fingerprint: true
+                }
+            }
+        }
+
+        // ====================================================================
+        // STAGE 4: SONARQUBE CLOUD STATIC ANALYSIS + QUALITY GATE
+        // Uploads source + our existing JaCoCo coverage report (from Stage 2,
+        // still present in this shared workspace) to SonarQube Cloud for
+        // static analysis: bugs, code smells, security hotspots, and
+        // coverage-on-new-code evaluation.
+        //
+        // -Dsonar.qualitygate.wait=true is what enforces "STOP PIPELINE if
+        // quality gate fails" - the scanner polls SonarQube Cloud after
+        // upload and this Maven goal (and therefore this stage) fails if
+        // the gate doesn't pass. No separate webhook configuration needed.
+        // ====================================================================
+        stage('SonarQube Analysis') {
+            steps {
+                dir('application') {
+                    withCredentials([string(credentialsId: 'sonarcloud-token', variable: 'SONAR_TOKEN')]) {
+                        sh '''
+                            mvn org.sonarsource.scanner.maven:sonar-maven-plugin:sonar \
+                                -Dsonar.organization=Shobit-2 \
+                                -Dsonar.projectKey=Shobit-2_fintech-payment-platform \
+                                -Dsonar.host.url=https://sonarcloud.io \
+                                -Dsonar.token=$SONAR_TOKEN \
+                                -Dsonar.qualitygate.wait=true
+                        '''
+                    }
                 }
             }
         }
