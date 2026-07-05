@@ -193,6 +193,14 @@
                 <configuration>
                     <format>ALL</format>
                     <failBuildOnCVSS>9</failBuildOnCVSS>
+                    <!-- Disabled: Sonatype OSS Index is a secondary vulnerability
+                         source that requires registered credentials for reliable
+                         use. Anonymous requests are heavily rate-limited and can
+                         intermittently throw hard failures rather than soft
+                         warnings, unrelated to our actual CVSS threshold check.
+                         NVD (via nvdApiKey, passed at runtime) remains our
+                         primary, reliable vulnerability source. -->
+                    <ossindexAnalyzerEnabled>false</ossindexAnalyzerEnabled>
                 </configuration>
             </plugin>
 
