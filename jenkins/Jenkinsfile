@@ -6,9 +6,10 @@
 // visualization in the Jenkins UI (Blue Ocean / stage view). We use it
 // throughout this project.
 //
-// STAGES IMPLEMENTED SO FAR: Checkout, Build & Test, SCA + SBOM, SonarQube
-// Later steps will add: Docker build, Trivy scan, ECR push, EKS deploy,
-// ArgoCD sync, DAST, smoke test, canary/blue-green.
+// STAGES IMPLEMENTED SO FAR: Checkout, Build & Test, SCA + SBOM, SonarQube,
+// Docker Build
+// Later steps will add: Trivy scan, ECR push, EKS deploy, ArgoCD sync,
+// DAST, smoke test, canary/blue-green.
 // ============================================================================
 
 pipeline {
@@ -166,8 +167,8 @@ pipeline {
                     withCredentials([string(credentialsId: 'sonarcloud-token', variable: 'SONAR_TOKEN')]) {
                         sh '''
                             mvn org.sonarsource.scanner.maven:sonar-maven-plugin:sonar \
-                                -Dsonar.organization=shobit-2 \
-                                -Dsonar.projectKey=shobit-2_fintech-payment-platform \
+                                -Dsonar.organization=Shobit-2 \
+                                -Dsonar.projectKey=Shobit-2_fintech-payment-platform \
                                 -Dsonar.host.url=https://sonarcloud.io \
                                 -Dsonar.token=$SONAR_TOKEN \
                                 -Dsonar.qualitygate.wait=true
