@@ -22,6 +22,13 @@ pipeline {
     environment {
         JAVA_HOME = '/usr/lib/jvm/java-21-openjdk-amd64'
         PATH      = "${JAVA_HOME}/bin:${env.PATH}"
+
+        // Image tag = build number + short commit SHA (e.g. "42-a1b2c3d").
+        // Traceable (any running container maps back to an exact commit/
+        // build) and immutable (unlike 'latest', this tag is never
+        // overwritten - essential for reliable rollback later).
+        IMAGE_NAME = 'fintech-payment-platform'
+        IMAGE_TAG  = "${env.BUILD_NUMBER}-${env.GIT_COMMIT.take(7)}"
     }
 
     options {
@@ -159,13 +166,42 @@ pipeline {
                     withCredentials([string(credentialsId: 'sonarcloud-token', variable: 'SONAR_TOKEN')]) {
                         sh '''
                             mvn org.sonarsource.scanner.maven:sonar-maven-plugin:sonar \
-                                -Dsonar.organization=shobit-2 \
-                                -Dsonar.projectKey=shobit-2_fintech-payment-platform \
+                                -Dsonar.organization=Shobit-2 \
+                                -Dsonar.projectKey=Shobit-2_fintech-payment-platform \
                                 -Dsonar.host.url=https://sonarcloud.io \
                                 -Dsonar.token=$SONAR_TOKEN \
                                 -Dsonar.qualitygate.wait=true
                         '''
                     }
+                }
+            }
+        }
+
+        // ====================================================================
+        // STAGE 5: DOCKER BUILD
+        // Uses the multi-stage Dockerfile from Step 4. Note this REBUILDS
+        // the JAR inside the Docker build stage rather than reusing Stage
+        // 2's archived JAR directly - Docker's own build context only sees
+        // files copied via COPY instructions, and our Dockerfile's build
+        // stage runs its own `mvn clean package`. This is intentional: it
+        // keeps the Docker image fully reproducible from source alone,
+        // without depending on Jenkins workspace state - anyone could take
+        // this Dockerfile and build an identical image outside Jenkins too.
+        //
+        // Two tags applied to the same image:
+        //   - IMAGE_TAG (build number + short commit SHA): immutable,
+        //     traceable, this is what actually gets deployed later.
+        //   - 'latest': convenience only, for manual local inspection -
+        //     never what ArgoCD deploys.
+        // ====================================================================
+        stage('Docker Build') {
+            steps {
+                dir('application') {
+                    sh '''
+                        docker build -t $IMAGE_NAME:$IMAGE_TAG -t $IMAGE_NAME:latest .
+                        echo "Built image:"
+                        docker images $IMAGE_NAME
+                    '''
                 }
             }
         }
