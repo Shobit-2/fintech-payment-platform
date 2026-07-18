@@ -107,8 +107,8 @@ pipeline {
                     withCredentials([string(credentialsId: 'sonarcloud-token', variable: 'SONAR_TOKEN')]) {
                         sh '''
                             mvn org.sonarsource.scanner.maven:sonar-maven-plugin:sonar \
-                                -Dsonar.organization=Shobit-2 \
-                                -Dsonar.projectKey=Shobit-2_fintech-payment-platform \
+                                -Dsonar.organization=shobit-2 \
+                                -Dsonar.projectKey=shobit-2_fintech-payment-platform \
                                 -Dsonar.host.url=https://sonarcloud.io \
                                 -Dsonar.token=$SONAR_TOKEN \
                                 -Dsonar.qualitygate.wait=true
