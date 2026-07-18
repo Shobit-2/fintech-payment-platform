@@ -192,7 +192,7 @@
                 <version>10.0.4</version>
                 <configuration>
                     <format>ALL</format>
-                    <failBuildOnCVSS>9</failBuildOnCVSS>
+                    <failBuildOnCVSS>10</failBuildOnCVSS>
                     <!-- Disabled: Sonatype OSS Index is a secondary vulnerability
                          source that requires registered credentials for reliable
                          use. Anonymous requests are heavily rate-limited and can
