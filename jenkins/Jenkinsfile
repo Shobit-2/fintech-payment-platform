@@ -7,42 +7,30 @@
 // throughout this project.
 //
 // STAGES IMPLEMENTED SO FAR: Checkout, Build & Test, SCA + SBOM, SonarQube,
-// Docker Build
-// Later steps will add: Trivy scan, ECR push, EKS deploy, ArgoCD sync,
-// DAST, smoke test, canary/blue-green.
+// Docker Build, Trivy Scan
+// Later steps will add: ECR push, EKS deploy, ArgoCD sync, DAST, smoke
+// test, canary/blue-green.
 // ============================================================================
 
 pipeline {
     agent any
 
-    // Runs on every agent shell step in this pipeline. Explicit here so
-    // Maven definitely uses the intended JDK, rather than silently
-    // inheriting whatever Jenkins's own systemd override happens to set -
-    // being explicit in the Jenkinsfile is more maintainable than relying
-    // on host-level configuration nobody reading this file can see.
     environment {
         JAVA_HOME = '/usr/lib/jvm/java-21-openjdk-amd64'
         PATH      = "${JAVA_HOME}/bin:${env.PATH}"
 
         // Image tag = build number + short commit SHA (e.g. "42-a1b2c3d").
-        // Traceable (any running container maps back to an exact commit/
-        // build) and immutable (unlike 'latest', this tag is never
-        // overwritten - essential for reliable rollback later).
+        // Traceable and immutable - unlike 'latest', this tag is never
+        // overwritten, essential for reliable rollback later.
         IMAGE_NAME = 'fintech-payment-platform'
         IMAGE_TAG  = "${env.BUILD_NUMBER}-${env.GIT_COMMIT.take(7)}"
     }
 
     options {
-        // Keeps only the last 10 build records/artifacts - prevents the
-        // Jenkins server's disk from slowly filling up over weeks of runs.
         buildDiscarder(logRotator(numToKeepStr: '10'))
-        // Fails fast if a stage hangs (e.g. a stuck test) instead of a
-        // zombie build occupying the executor forever.
-        // TEMPORARILY raised from 30 to 60 minutes to allow the ONE-TIME
-        // full NVD database sync (Stage 3) to complete on first run. Once
-        // that completes, the local cache persists on this EC2 instance
-        // and future runs only fetch incremental deltas (seconds, not
-        // minutes) - we'll lower this back down afterward.
+        // TEMPORARILY raised from 30 to 60 minutes for the one-time full
+        // NVD database sync (Stage 3). Lower back down once confirmed the
+        // local cache is warm and subsequent runs are fast.
         timeout(time: 60, unit: 'MINUTES')
     }
 
@@ -50,11 +38,6 @@ pipeline {
 
         // ====================================================================
         // STAGE 1: SOURCE CODE CHECKOUT
-        // In practice this stage is implicit - Jenkins already cloned the
-        // repo (per the Pipeline job's SCM configuration) before this
-        // Jenkinsfile even started executing. We keep an explicit stage
-        // anyway purely for VISIBILITY: the pipeline stage view should show
-        // every real phase of work, checkout included, not hide it.
         // ====================================================================
         stage('Checkout') {
             steps {
@@ -66,13 +49,6 @@ pipeline {
 
         // ====================================================================
         // STAGE 2: BUILD + TEST (CI)
-        // mvn clean verify runs the FULL lifecycle up through 'verify':
-        //   validate -> compile -> test (Surefire, *Test.java)
-        //            -> package -> integration-test (Failsafe, *IT.java)
-        //            -> verify
-        // JaCoCo is bound to the 'test' phase in pom.xml, so coverage data
-        // is collected automatically as part of this one command - no
-        // separate coverage step needed.
         // ====================================================================
         stage('Build & Test') {
             steps {
@@ -89,16 +65,9 @@ pipeline {
             }
             post {
                 always {
-                    // Publishes JUnit/TestNG results (from Surefire AND
-                    // Failsafe) so Jenkins shows pass/fail trends and lets
-                    // you click into individual test failures in the UI,
-                    // rather than having to grep console output.
                     junit testResults: 'application/target/surefire-reports/*.xml,application/target/failsafe-reports/*.xml',
                           allowEmptyResults: true
 
-                    // Archives the compiled JAR as a build artifact -
-                    // downloadable from the Jenkins UI, and this is also
-                    // what Stage 5 (Docker build) will pick up next.
                     archiveArtifacts artifacts: 'application/target/*.jar',
                                       allowEmptyArchive: true,
                                       fingerprint: true
@@ -108,26 +77,10 @@ pipeline {
 
         // ====================================================================
         // STAGE 3: SOFTWARE COMPOSITION ANALYSIS + SBOM
-        // Two separate Maven goals, both already configured as plugins in
-        // pom.xml (see Step 3): OWASP Dependency-Check scans every
-        // dependency against the NVD (National Vulnerability Database) for
-        // known CVEs; CycloneDX generates bom.xml, a machine-readable
-        // inventory of every dependency + version + license.
-        //
-        // These run as a SEPARATE stage from Build & Test deliberately - if
-        // dependency scanning becomes slow (NVD database sync can take a
-        // while on a cold cache) or needs its own failure handling, it's
-        // isolated and easy to reason about independently in the stage view.
         // ====================================================================
         stage('SCA + SBOM') {
             steps {
                 dir('application') {
-                    // NVD API key dramatically speeds up OWASP Dependency-
-                    // Check's vulnerability database sync (keyless requests
-                    // are heavily rate-limited by NIST and can take 20-30+
-                    // minutes on a cold cache). Injected as an environment
-                    // variable only for this step's duration - never
-                    // printed to console, never stored in the repo.
                     withCredentials([string(credentialsId: 'nvd-api-key', variable: 'NVD_API_KEY')]) {
                         sh '''
                             mvn org.owasp:dependency-check-maven:check -DnvdApiKey=$NVD_API_KEY
@@ -138,10 +91,6 @@ pipeline {
             }
             post {
                 always {
-                    // Archives the human-readable HTML report + the raw
-                    // SBOM so both are downloadable from this build in the
-                    // Jenkins UI, and available for Stage 7 (push SBOM to
-                    // ECR alongside the image) later.
                     archiveArtifacts artifacts: 'application/target/dependency-check-report.html,application/target/bom.xml',
                                       allowEmptyArchive: true,
                                       fingerprint: true
@@ -151,15 +100,6 @@ pipeline {
 
         // ====================================================================
         // STAGE 4: SONARQUBE CLOUD STATIC ANALYSIS + QUALITY GATE
-        // Uploads source + our existing JaCoCo coverage report (from Stage 2,
-        // still present in this shared workspace) to SonarQube Cloud for
-        // static analysis: bugs, code smells, security hotspots, and
-        // coverage-on-new-code evaluation.
-        //
-        // -Dsonar.qualitygate.wait=true is what enforces "STOP PIPELINE if
-        // quality gate fails" - the scanner polls SonarQube Cloud after
-        // upload and this Maven goal (and therefore this stage) fails if
-        // the gate doesn't pass. No separate webhook configuration needed.
         // ====================================================================
         stage('SonarQube Analysis') {
             steps {
@@ -180,20 +120,6 @@ pipeline {
 
         // ====================================================================
         // STAGE 5: DOCKER BUILD
-        // Uses the multi-stage Dockerfile from Step 4. Note this REBUILDS
-        // the JAR inside the Docker build stage rather than reusing Stage
-        // 2's archived JAR directly - Docker's own build context only sees
-        // files copied via COPY instructions, and our Dockerfile's build
-        // stage runs its own `mvn clean package`. This is intentional: it
-        // keeps the Docker image fully reproducible from source alone,
-        // without depending on Jenkins workspace state - anyone could take
-        // this Dockerfile and build an identical image outside Jenkins too.
-        //
-        // Two tags applied to the same image:
-        //   - IMAGE_TAG (build number + short commit SHA): immutable,
-        //     traceable, this is what actually gets deployed later.
-        //   - 'latest': convenience only, for manual local inspection -
-        //     never what ArgoCD deploys.
         // ====================================================================
         stage('Docker Build') {
             steps {
@@ -203,6 +129,33 @@ pipeline {
                         echo "Built image:"
                         docker images $IMAGE_NAME
                     '''
+                }
+            }
+        }
+
+        // ====================================================================
+        // STAGE 6: TRIVY CONTAINER SECURITY SCAN
+        // Scans the image built in Stage 5 - the ENTIRE image (OS packages,
+        // system libraries), not just app dependencies (that's Stage 3).
+        // --exit-code 1 fails this stage if CRITICAL/HIGH findings exist.
+        // ====================================================================
+        stage('Trivy Scan') {
+            steps {
+                dir('application') {
+                    sh '''
+                        trivy image --format table $IMAGE_NAME:$IMAGE_TAG
+
+                        trivy image --format json --output trivy-report.json $IMAGE_NAME:$IMAGE_TAG
+
+                        trivy image --exit-code 1 --severity CRITICAL,HIGH $IMAGE_NAME:$IMAGE_TAG
+                    '''
+                }
+            }
+            post {
+                always {
+                    archiveArtifacts artifacts: 'application/trivy-report.json',
+                                      allowEmptyArchive: true,
+                                      fingerprint: true
                 }
             }
         }
