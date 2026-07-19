@@ -159,6 +159,40 @@ pipeline {
                 }
             }
         }
+
+        // ====================================================================
+        // STAGE 7: PUSH TO AMAZON ECR
+        // Pushes the Trivy-scanned image (Stage 6 already confirmed no
+        // CRITICAL/HIGH findings) to our ECR repository. Authentication
+        // uses the Jenkins EC2 instance's IAM role (see terraform/jenkins-
+        // ec2/ecr-push-policy.tf) - no AWS access keys stored anywhere.
+        //
+        // AWS account ID is fetched dynamically via STS rather than
+        // hardcoded, so this Jenkinsfile isn't tied to one specific AWS
+        // account if ever reused elsewhere.
+        // ====================================================================
+        stage('Push to ECR') {
+            steps {
+                dir('application') {
+                    sh '''
+                        AWS_ACCOUNT_ID=$(aws sts get-caller-identity --query Account --output text)
+                        ECR_REPO="${AWS_ACCOUNT_ID}.dkr.ecr.us-east-1.amazonaws.com/fintech-payment-platform"
+
+                        echo "Logging in to ECR: ${ECR_REPO}"
+                        aws ecr get-login-password --region us-east-1 | \
+                            docker login --username AWS --password-stdin "${AWS_ACCOUNT_ID}.dkr.ecr.us-east-1.amazonaws.com"
+
+                        docker tag $IMAGE_NAME:$IMAGE_TAG ${ECR_REPO}:$IMAGE_TAG
+                        docker tag $IMAGE_NAME:$IMAGE_TAG ${ECR_REPO}:latest
+
+                        docker push ${ECR_REPO}:$IMAGE_TAG
+                        docker push ${ECR_REPO}:latest
+
+                        echo "Pushed: ${ECR_REPO}:$IMAGE_TAG"
+                    '''
+                }
+            }
+        }
     }
 
     post {
