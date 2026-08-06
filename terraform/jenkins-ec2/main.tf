@@ -9,6 +9,19 @@ resource "aws_instance" "jenkins" {
   ami           = data.aws_ami.ubuntu.id
   instance_type = var.instance_type
 
+  lifecycle {
+    # Prevents Terraform from replacing this instance every time a newer
+    # Ubuntu AMI is published upstream. The AMI lookup (data.aws_ami.ubuntu)
+    # is still useful for the FIRST creation of this instance, but once
+    # it's running - especially with hours of manual setup on it (Jenkins,
+    # Docker, Trivy, Maven, JDKs) - we never want a routine `terraform plan`
+    # to silently propose destroying and recreating it just because a new
+    # AMI exists. Applying OS patches to a running instance should be a
+    # deliberate, separate action (apt upgrade over SSH), not an accidental
+    # side effect of re-running Terraform.
+    ignore_changes = [ami]
+  }
+
   # First public subnet from the networking layer's output. Jenkins needs a
   # public IP (below) to be reachable, hence a public subnet - reachability
   # is controlled by the security group, not subnet choice, but public
