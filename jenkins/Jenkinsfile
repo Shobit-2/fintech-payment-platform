@@ -171,27 +171,62 @@ pipeline {
         // hardcoded, so this Jenkinsfile isn't tied to one specific AWS
         // account if ever reused elsewhere.
         // ====================================================================
+        // stage('Push to ECR') {
+        //     steps {
+        //         dir('application') {
+        //             sh '''
+        //                 AWS_ACCOUNT_ID=$(aws sts get-caller-identity --query Account --output text)
+        //                 ECR_REPO="${AWS_ACCOUNT_ID}.dkr.ecr.us-east-1.amazonaws.com/fintech-payment-platform"
+
+        //                 echo "Logging in to ECR: ${ECR_REPO}"
+        //                 aws ecr get-login-password --region us-east-1 | \
+        //                     docker login --username AWS --password-stdin "${AWS_ACCOUNT_ID}.dkr.ecr.us-east-1.amazonaws.com"
+
+        //                 docker tag $IMAGE_NAME:$IMAGE_TAG ${ECR_REPO}:$IMAGE_TAG
+        //                 docker tag $IMAGE_NAME:$IMAGE_TAG ${ECR_REPO}:latest
+
+        //                 docker push ${ECR_REPO}:$IMAGE_TAG
+        //                 docker push ${ECR_REPO}:latest
+
+        //                 echo "Pushed: ${ECR_REPO}:$IMAGE_TAG"
+        //             '''
+        //         }
+        //     }
+
+
         stage('Push to ECR') {
-            steps {
-                dir('application') {
-                    sh '''
-                        AWS_ACCOUNT_ID=$(aws sts get-caller-identity --query Account --output text)
-                        ECR_REPO="${AWS_ACCOUNT_ID}.dkr.ecr.us-east-1.amazonaws.com/fintech-payment-platform"
+    steps {
+        dir('application') {
+            withCredentials([
+                [$class: 'AmazonWebServicesCredentialsBinding',
+                 credentialsId: 'aws-credentials']
+            ]) {
+                sh '''
+                    export AWS_DEFAULT_REGION=us-east-1
 
-                        echo "Logging in to ECR: ${ECR_REPO}"
-                        aws ecr get-login-password --region us-east-1 | \
-                            docker login --username AWS --password-stdin "${AWS_ACCOUNT_ID}.dkr.ecr.us-east-1.amazonaws.com"
+                    AWS_ACCOUNT_ID=$(aws sts get-caller-identity --query Account --output text)
+                    ECR_REPO="${AWS_ACCOUNT_ID}.dkr.ecr.${AWS_DEFAULT_REGION}.amazonaws.com/fintech-payment-platform"
 
-                        docker tag $IMAGE_NAME:$IMAGE_TAG ${ECR_REPO}:$IMAGE_TAG
-                        docker tag $IMAGE_NAME:$IMAGE_TAG ${ECR_REPO}:latest
+                    echo "AWS Account: ${AWS_ACCOUNT_ID}"
+                    echo "Logging into ECR..."
 
-                        docker push ${ECR_REPO}:$IMAGE_TAG
-                        docker push ${ECR_REPO}:latest
+                    aws ecr get-login-password --region ${AWS_DEFAULT_REGION} | \
+                        docker login \
+                        --username AWS \
+                        --password-stdin ${AWS_ACCOUNT_ID}.dkr.ecr.${AWS_DEFAULT_REGION}.amazonaws.com
 
-                        echo "Pushed: ${ECR_REPO}:$IMAGE_TAG"
-                    '''
-                }
+                    docker tag ${IMAGE_NAME}:${IMAGE_TAG} ${ECR_REPO}:${IMAGE_TAG}
+                    docker tag ${IMAGE_NAME}:${IMAGE_TAG} ${ECR_REPO}:latest
+
+                    docker push ${ECR_REPO}:${IMAGE_TAG}
+                    docker push ${ECR_REPO}:latest
+
+                    echo "Successfully pushed ${ECR_REPO}:${IMAGE_TAG}"
+                '''
             }
+        }
+    }
+}
         }
     }
 
