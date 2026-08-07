@@ -259,10 +259,8 @@ pipeline {
                         --password-stdin ${AWS_ACCOUNT_ID}.dkr.ecr.${AWS_REGION}.amazonaws.com
 
                     docker tag ${IMAGE_NAME}:${IMAGE_TAG} ${ECR_REPO}:${IMAGE_TAG}
-                    docker tag ${IMAGE_NAME}:${IMAGE_TAG} ${ECR_REPO}:latest
 
                     docker push ${ECR_REPO}:${IMAGE_TAG}
-                    docker push ${ECR_REPO}:latest
 
                     echo "Successfully pushed ${ECR_REPO}:${IMAGE_TAG}"
                 '''
