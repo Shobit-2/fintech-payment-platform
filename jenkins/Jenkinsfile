@@ -193,7 +193,25 @@ pipeline {
         //         }
         //     }
 
+        stage('Debug Environment') {
+    steps {
+        sh '''
+            echo "Shell: $0"
+            whoami
+            pwd
 
+            echo "PATH=$PATH"
+
+            which aws || true
+            command -v aws || true
+
+            ls -l /usr/local/bin/aws || true
+
+            aws --version || true
+            /usr/local/bin/aws --version || true
+        '''
+    }
+}
         stage('Push to ECR') {
     steps {
         dir('application') {
@@ -204,13 +222,13 @@ pipeline {
                 sh '''
                     export AWS_DEFAULT_REGION=us-east-1
 
-                    AWS_ACCOUNT_ID=$(aws sts get-caller-identity --query Account --output text)
+                    AWS_ACCOUNT_ID=$(/usr/local/bin/aws sts get-caller-identity --query Account --output text --query Account --output text)
                     ECR_REPO="${AWS_ACCOUNT_ID}.dkr.ecr.${AWS_DEFAULT_REGION}.amazonaws.com/fintech-payment-platform"
 
                     echo "AWS Account: ${AWS_ACCOUNT_ID}"
                     echo "Logging into ECR..."
 
-                    aws ecr get-login-password --region ${AWS_DEFAULT_REGION} | \
+                    /usr/local/bin/aws ecr get-login-password --region ${AWS_DEFAULT_REGION} | \
                         docker login \
                         --username AWS \
                         --password-stdin ${AWS_ACCOUNT_ID}.dkr.ecr.${AWS_DEFAULT_REGION}.amazonaws.com
