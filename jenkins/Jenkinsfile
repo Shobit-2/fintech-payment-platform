@@ -245,7 +245,7 @@ pipeline {
                  credentialsId: 'aws-credentials']
             ]) {
                 sh '''
-                    set -euo pipefail
+                    set -eu
                     export AWS_REGION=${AWS_REGION}
 
                     AWS_ACCOUNT_ID=$(aws sts get-caller-identity --query Account --output text)
