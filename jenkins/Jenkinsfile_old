@@ -17,8 +17,7 @@ pipeline {
 
     environment {
         JAVA_HOME = '/usr/lib/jvm/java-21-openjdk-amd64'
-        PATH      = "/usr/local/bin:${JAVA_HOME}/bin:${env.PATH}"
-        AWS_REGION = 'us-east-1'
+        PATH      = "${JAVA_HOME}/bin:${env.PATH}"
 
         // Image tag = build number + short commit SHA (e.g. "42-a1b2c3d").
         // Traceable and immutable - unlike 'latest', this tag is never
@@ -32,8 +31,6 @@ pipeline {
         // TEMPORARILY raised from 30 to 60 minutes for the one-time full
         // NVD database sync (Stage 3). Lower back down once confirmed the
         // local cache is warm and subsequent runs are fast.
-        timestamps()
-        ansiColor('xterm')
         timeout(time: 60, unit: 'MINUTES')
     }
 
@@ -146,11 +143,11 @@ pipeline {
             steps {
                 dir('application') {
                     sh '''
-                        trivy image --skip-version-check --format table $IMAGE_NAME:$IMAGE_TAG
+                        trivy image --format table $IMAGE_NAME:$IMAGE_TAG
 
-                        trivy image --skip-version-check --format json --output trivy-report.json $IMAGE_NAME:$IMAGE_TAG
+                        trivy image --format json --output trivy-report.json $IMAGE_NAME:$IMAGE_TAG
 
-                        trivy image --skip-version-check --exit-code 1 --severity CRITICAL $IMAGE_NAME:$IMAGE_TAG
+                        trivy image --exit-code 1 --severity CRITICAL $IMAGE_NAME:$IMAGE_TAG
                     '''
                 }
             }
@@ -175,28 +172,6 @@ pipeline {
         // account if ever reused elsewhere.
         // ====================================================================
         // stage('Push to ECR') {
-        //     steps {
-        //         dir('application') {
-        //             sh '''
-        //                 AWS_ACCOUNT_ID=$(aws sts get-caller-identity --query Account --output text)
-        //                 ECR_REPO="${AWS_ACCOUNT_ID}.dkr.ecr.us-east-1.amazonaws.com/fintech-payment-platform"
-
-        //                 echo "Logging in to ECR: ${ECR_REPO}"
-        //                 aws ecr get-login-password --region us-east-1 | \
-        //                     docker login --username AWS --password-stdin "${AWS_ACCOUNT_ID}.dkr.ecr.us-east-1.amazonaws.com"
-
-        //                 docker tag $IMAGE_NAME:$IMAGE_TAG ${ECR_REPO}:$IMAGE_TAG
-        //                 docker tag $IMAGE_NAME:$IMAGE_TAG ${ECR_REPO}:latest
-
-        //                 docker push ${ECR_REPO}:$IMAGE_TAG
-        //                 docker push ${ECR_REPO}:latest
-
-        //                 echo "Pushed: ${ECR_REPO}:$IMAGE_TAG"
-        //             '''
-        //         }
-        //     }
-
-        stage('Push to ECR') {
         //     steps {
         //         dir('application') {
         //             sh '''
@@ -245,16 +220,15 @@ pipeline {
                  credentialsId: 'aws-credentials']
             ]) {
                 sh '''
-                    set -euo pipefail
-                    export AWS_REGION=${AWS_REGION}
+                    export AWS_DEFAULT_REGION=us-east-1
 
-                    AWS_ACCOUNT_ID=$(aws sts get-caller-identity --query Account --output text)
+                    AWS_ACCOUNT_ID=$(/usr/local/bin/aws sts get-caller-identity --query Account --output text --query Account --output text)
                     ECR_REPO="${AWS_ACCOUNT_ID}.dkr.ecr.${AWS_DEFAULT_REGION}.amazonaws.com/fintech-payment-platform"
 
                     echo "AWS Account: ${AWS_ACCOUNT_ID}"
                     echo "Logging into ECR..."
 
-                    aws ecr get-login-password --region ${AWS_REGION} | \
+                    /usr/local/bin/aws ecr get-login-password --region ${AWS_DEFAULT_REGION} | \
                         docker login \
                         --username AWS \
                         --password-stdin ${AWS_ACCOUNT_ID}.dkr.ecr.${AWS_DEFAULT_REGION}.amazonaws.com
@@ -275,10 +249,6 @@ pipeline {
     }
 
     post {
-        always {
-            cleanWs()
-            sh 'docker image prune -f || true'
-        }
         success {
             echo "✅ Build & Test stage passed."
         }
