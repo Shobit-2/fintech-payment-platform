@@ -1,23 +1,24 @@
 // ============================================================================
 // Jenkinsfile - Digital Payment Processing Platform CI/CD Pipeline
 //
-// Declarative Pipeline syntax (vs. Scripted Pipeline): declarative is
-// structured, easier to read, and has built-in support for stage
-// visualization in the Jenkins UI (Blue Ocean / stage view). We use it
-// throughout this project.
-//
 // STAGES IMPLEMENTED SO FAR: Checkout, Build & Test, SCA + SBOM, SonarQube,
-// Docker Build, Trivy Scan
-// Later steps will add: ECR push, EKS deploy, ArgoCD sync, DAST, smoke
-// test, canary/blue-green.
+// Docker Build, Trivy Scan, Push to ECR
+// Later steps will add: EKS deploy, ArgoCD sync, DAST, smoke test,
+// canary/blue-green.
+//
+// NOTE: Push to ECR currently authenticates via a static AWS credential
+// ('aws-credentials' in Jenkins) rather than the EC2 instance's IAM role.
+// This was a deliberate, temporary tradeoff to unblock the pipeline - the
+// instance-role approach (see terraform/jenkins-ec2/ecr-push-policy.tf)
+// is the more secure long-term target and should be revisited.
 // ============================================================================
 
 pipeline {
     agent any
 
     environment {
-        JAVA_HOME = '/usr/lib/jvm/java-21-openjdk-amd64'
-        PATH      = "/usr/local/bin:${JAVA_HOME}/bin:${env.PATH}"
+        JAVA_HOME  = '/usr/lib/jvm/java-21-openjdk-amd64'
+        PATH       = "/usr/local/bin:${JAVA_HOME}/bin:${env.PATH}"
         AWS_REGION = 'us-east-1'
 
         // Image tag = build number + short commit SHA (e.g. "42-a1b2c3d").
@@ -29,9 +30,6 @@ pipeline {
 
     options {
         buildDiscarder(logRotator(numToKeepStr: '10'))
-        // TEMPORARILY raised from 30 to 60 minutes for the one-time full
-        // NVD database sync (Stage 3). Lower back down once confirmed the
-        // local cache is warm and subsequent runs are fast.
         timestamps()
         ansiColor('xterm')
         timeout(time: 60, unit: 'MINUTES')
@@ -138,9 +136,6 @@ pipeline {
 
         // ====================================================================
         // STAGE 6: TRIVY CONTAINER SECURITY SCAN
-        // Scans the image built in Stage 5 - the ENTIRE image (OS packages,
-        // system libraries), not just app dependencies (that's Stage 3).
-        // --exit-code 1 fails this stage if CRITICAL/HIGH findings exist.
         // ====================================================================
         stage('Trivy Scan') {
             steps {
@@ -165,109 +160,40 @@ pipeline {
 
         // ====================================================================
         // STAGE 7: PUSH TO AMAZON ECR
-        // Pushes the Trivy-scanned image (Stage 6 already confirmed no
-        // CRITICAL/HIGH findings) to our ECR repository. Authentication
-        // uses the Jenkins EC2 instance's IAM role (see terraform/jenkins-
-        // ec2/ecr-push-policy.tf) - no AWS access keys stored anywhere.
-        //
-        // AWS account ID is fetched dynamically via STS rather than
-        // hardcoded, so this Jenkinsfile isn't tied to one specific AWS
-        // account if ever reused elsewhere.
+        // Authenticates via a static AWS credential (see NOTE at top of
+        // file re: revisiting instance-role auth later).
         // ====================================================================
-        // stage('Push to ECR') {
-        //     steps {
-        //         dir('application') {
-        //             sh '''
-        //                 AWS_ACCOUNT_ID=$(aws sts get-caller-identity --query Account --output text)
-        //                 ECR_REPO="${AWS_ACCOUNT_ID}.dkr.ecr.us-east-1.amazonaws.com/fintech-payment-platform"
-
-        //                 echo "Logging in to ECR: ${ECR_REPO}"
-        //                 aws ecr get-login-password --region us-east-1 | \
-        //                     docker login --username AWS --password-stdin "${AWS_ACCOUNT_ID}.dkr.ecr.us-east-1.amazonaws.com"
-
-        //                 docker tag $IMAGE_NAME:$IMAGE_TAG ${ECR_REPO}:$IMAGE_TAG
-        //                 docker tag $IMAGE_NAME:$IMAGE_TAG ${ECR_REPO}:latest
-
-        //                 docker push ${ECR_REPO}:$IMAGE_TAG
-        //                 docker push ${ECR_REPO}:latest
-
-        //                 echo "Pushed: ${ECR_REPO}:$IMAGE_TAG"
-        //             '''
-        //         }
-        //     }
-
-        //stage('Push to ECR') {
-        //     steps {
-        //         dir('application') {
-        //             sh '''
-        //                 AWS_ACCOUNT_ID=$(aws sts get-caller-identity --query Account --output text)
-        //                 ECR_REPO="${AWS_ACCOUNT_ID}.dkr.ecr.us-east-1.amazonaws.com/fintech-payment-platform"
-
-        //                 echo "Logging in to ECR: ${ECR_REPO}"
-        //                 aws ecr get-login-password --region us-east-1 | \
-        //                     docker login --username AWS --password-stdin "${AWS_ACCOUNT_ID}.dkr.ecr.us-east-1.amazonaws.com"
-
-        //                 docker tag $IMAGE_NAME:$IMAGE_TAG ${ECR_REPO}:$IMAGE_TAG
-        //                 docker tag $IMAGE_NAME:$IMAGE_TAG ${ECR_REPO}:latest
-
-        //                 docker push ${ECR_REPO}:$IMAGE_TAG
-        //                 docker push ${ECR_REPO}:latest
-
-        //                 echo "Pushed: ${ECR_REPO}:$IMAGE_TAG"
-        //             '''
-        //         }
-        //     }
-
-        stage('Debug Environment') {
-    steps {
-        sh '''
-            echo "Shell: $0"
-            whoami
-            pwd
-
-            echo "PATH=$PATH"
-
-            which aws || true
-            command -v aws || true
-
-            ls -l /usr/local/bin/aws || true
-
-            aws --version || true
-            /usr/local/bin/aws --version || true
-        '''
-    }
-}
         stage('Push to ECR') {
-    steps {
-        dir('application') {
-            withCredentials([
-                [$class: 'AmazonWebServicesCredentialsBinding',
-                 credentialsId: 'aws-credentials']
-            ]) {
-                sh '''
-                    set -eu
+            steps {
+                dir('application') {
+                    withCredentials([
+                        [$class: 'AmazonWebServicesCredentialsBinding',
+                         credentialsId: 'aws-credentials']
+                    ]) {
+                        sh '''
+                            set -eu
 
-                    AWS_ACCOUNT_ID=$(aws sts get-caller-identity --query Account --output text)
-                    ECR_REPO="${AWS_ACCOUNT_ID}.dkr.ecr.${AWS_REGION}.amazonaws.com/fintech-payment-platform"
+                            AWS_ACCOUNT_ID=$(aws sts get-caller-identity --query Account --output text)
+                            ECR_REPO="${AWS_ACCOUNT_ID}.dkr.ecr.${AWS_REGION}.amazonaws.com/fintech-payment-platform"
 
-                    echo "AWS Account: ${AWS_ACCOUNT_ID}"
-                    echo "Logging into ECR..."
+                            echo "AWS Account: ${AWS_ACCOUNT_ID}"
+                            echo "Logging into ECR..."
 
-                    aws ecr get-login-password --region ${AWS_REGION} | \
-                        docker login \
-                        --username AWS \
-                        --password-stdin ${AWS_ACCOUNT_ID}.dkr.ecr.${AWS_REGION}.amazonaws.com
+                            aws ecr get-login-password --region ${AWS_REGION} | \
+                                docker login \
+                                --username AWS \
+                                --password-stdin ${AWS_ACCOUNT_ID}.dkr.ecr.${AWS_REGION}.amazonaws.com
 
-                    docker tag ${IMAGE_NAME}:${IMAGE_TAG} ${ECR_REPO}:${IMAGE_TAG}
+                            docker tag ${IMAGE_NAME}:${IMAGE_TAG} ${ECR_REPO}:${IMAGE_TAG}
 
-                    docker push ${ECR_REPO}:${IMAGE_TAG}
+                            docker push ${ECR_REPO}:${IMAGE_TAG}
 
-                    echo "Successfully pushed ${ECR_REPO}:${IMAGE_TAG}"
-                '''
+                            echo "Successfully pushed ${ECR_REPO}:${IMAGE_TAG}"
+                        '''
+                    }
+                }
             }
         }
-    }
-}
     }
 
     post {
