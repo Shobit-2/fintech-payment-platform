@@ -2,9 +2,10 @@ data "terraform_remote_state" "networking" {
   backend = "s3"
 
   config = {
-    bucket = "fintech-payment-platform-tfstate"
-    key    = "fintech/networking/terraform.tfstate"
-    region = var.aws_region
+    bucket         = "fintech-payment-platform-tfstate"
+    key            = "networking/terraform.tfstate"
+    region         = "us-east-1"
+    dynamodb_table = "fintech-payment-platform-tf-lock"
   }
 }
 
